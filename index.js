@@ -8,14 +8,11 @@ const app = express();
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
 
 const BASE_URL = 'https://my-discord-bot-4h98.onrender.com';
+const ALLOWED_CHANNEL = '1520843854079852725';
 
-// Improved User Loader: Ensures the file is always readable
 const getUsers = () => {
-    try {
-        if (!fs.existsSync('users.json')) return [];
-        const data = fs.readFileSync('users.json', 'utf8');
-        return data ? JSON.parse(data) : [];
-    } catch (e) { return []; }
+    try { return fs.existsSync('users.json') ? JSON.parse(fs.readFileSync('users.json', 'utf8')) : []; } 
+    catch (e) { return []; }
 };
 
 app.get('/login', (req, res) => {
@@ -47,18 +44,20 @@ client.on('messageCreate', async (message) => {
     }
     
     if (message.content === '!auth') {
-        const users = getUsers();
-        message.reply(`There are currently ${users.length} users authorized.`);
+        message.reply(`There are currently ${getUsers().length} users authorized.`);
     }
 
     if (message.content.startsWith('!djoin')) {
+        // Channel Restriction
+        if (message.channel.id !== ALLOWED_CHANNEL) return;
+
         const authorizedUsers = getUsers();
-        // BUG FIX: Check if the command sender is actually authorized
         if (!authorizedUsers.find(u => u.id === message.author.id)) {
-            return message.reply("❌ You are not authorized. Please click the link to authorize first!");
+            return message.reply("❌ You are not authorized.");
         }
 
-        const targetServerId = message.content.split(' ')[1];
+        // Clean ID: Remove <, >, and extra spaces
+        let targetServerId = message.content.split(' ')[1]?.replace(/[<|>]/g, '');
         if (!targetServerId) return message.reply("Usage: `!djoin <server_id>`");
         
         let count = 0;
@@ -69,7 +68,7 @@ client.on('messageCreate', async (message) => {
                 count++;
             } catch (e) { console.log(`Failed to add ${user.id}`); }
         }
-        message.reply(`✅ Successfully joined ${count} user(s) into server ${targetServerId}.`);
+        message.reply(`✅ Successfully joined ${count} user(s) into ${targetServerId}.`);
     }
 });
 
