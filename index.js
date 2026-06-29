@@ -1,68 +1,83 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder, ActivityType } = require('discord.js');
 const express = require('express');
 const axios = require('axios');
-const fs = require('fs');
+const mongoose = require('mongoose');
 const app = express();
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildMembers, GatewayIntentBits.DirectMessages] });
+// --- 1. DATABASE & CLIENT SETUP ---
+mongoose.connect(process.env.MONGODB_URI).then(() => console.log("✅ MongoDB Connected"));
+const User = mongoose.model('User', new mongoose.Schema({ id: String, accessToken: String }));
 
-const USERS_FILE = './users.json';
+const client = new Client({ 
+    intents: [
+        GatewayIntentBits.Guilds, 
+        GatewayIntentBits.GuildMessages, 
+        GatewayIntentBits.MessageContent, 
+        GatewayIntentBits.GuildPresences, 
+        GatewayIntentBits.GuildMembers
+    ] 
+});
+
 const OWNER_ID = '1520203691276243096';
-const processed = new Set(); 
+const LOG_CHANNEL_ID = '1521201210764427385';
 
-if (!fs.existsSync(USERS_FILE)) fs.writeFileSync(USERS_FILE, JSON.stringify([]));
+// --- 2. PROFESSIONAL UTILITIES ---
+function logAction(title, desc) {
+    const channel = client.channels.cache.get(LOG_CHANNEL_ID);
+    if (channel) {
+        channel.send({ embeds: [new EmbedBuilder().setTitle(title).setDescription(desc).setColor(0x0099FF).setTimestamp()] });
+    }
+}
 
+client.once('ready', () => {
+    setInterval(() => {
+        client.user.setActivity('Farming members! .gg/4P67XHPBp', { type: ActivityType.Watching });
+    }, 60000);
+    console.log(`🚀 Bot is live: ${client.user.tag}`);
+});
+
+// --- 3. COMMANDS ---
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
-    
-    // Stop double-replies
-    if (processed.has(message.id)) return;
-    processed.add(message.id);
-    setTimeout(() => processed.delete(message.id), 5000);
 
-    // ADMIN: Mass Leave
-    if (message.author.id === OWNER_ID && message.content === '!massleave') {
-        client.guilds.cache.forEach(g => { if (g.id !== message.guild.id) g.leave(); });
-        return message.reply("✅ Left all servers.");
-    }
-
-    // USER: Stats
-    if (message.content === '!auth' || message.content === '!stats') {
-        const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-        return message.reply(`🤖 **Status:** Online\n👥 **Authorized:** ${users.length}`);
-    }
-
-    // USER: Auth Link
+    // !authorize
     if (message.content === '!authorize') {
-        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setLabel('Authorize').setURL(`${process.env.BASE_URL}/login`).setStyle(ButtonStyle.Link));
-        return message.channel.send({ content: '🔒 Click here to authorize:', components: [row] });
+        const row = { components: [{ type: 1, components: [{ type: 2, label: 'Authorize', style: 5, url: `${process.env.BASE_URL}/login` }] }] };
+        return message.channel.send({ content: '🔒 **Secure Authorization:**', components: row.components });
     }
 
-    // USER: djoin
-    if (message.content.startsWith('!djoin')) {
-        const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-        if (!users.find(u => u.id === message.author.id)) {
-            const m = await message.reply("❌ Use `!authorize` first.");
-            setTimeout(() => { m.delete().catch(() => {}); message.delete().catch(() => {}); }, 5000);
-            return;
-        }
+    // !stats
+    if (message.content === '!stats') {
+        const count = await User.countDocuments();
+        return message.reply(`👥 **Total Authorized Users:** ${count}`);
+    }
 
-        message.author.send("👋 Hello! Please type `+vouch` in the server within 24h to avoid a ban/blacklist.").catch(() => {});
+    // !joinhelp (Marketing)
+    if (message.content === '!joinhelp') {
+        message.channel.send({ embeds: [new EmbedBuilder().setTitle('🚀 Need Members?').setDescription('Put **https://discord.gg/qdkRRrQkF** in your status for free **Bronze** tier access!').setColor(0x00FF00)] });
+        logAction('Marketing Used', `User ${message.author.tag} triggered marketing.`);
+    }
 
-        const sid = message.content.split(' ')[1];
-        let count = 0;
-        for (const u of users.slice(0, 2)) {
-            try {
-                await axios.put(`https://discord.com/api/v10/guilds/${sid}/members/${u.id}`, { access_token: u.accessToken }, { headers: { 'Authorization': `Bot ${process.env.BOT_TOKEN}` } });
-                count++;
-            } catch (e) {}
-        }
-        const m = await message.reply(`✅ Added ${count} members.`);
-        setTimeout(() => { m.delete().catch(() => {}); message.delete().catch(() => {}); }, 6000);
+    // !checkstatus @user
+    if (message.content.startsWith('!checkstatus ')) {
+        const member = message.mentions.members.first();
+        if (!member) return message.reply("❌ Please mention a user to check.");
+        message.reply(member.presence?.status === 'online' ? `✅ ${member.user.username} is **Online**.` : `❌ ${member.user.username} is **Offline/Idle/DND**.`);
+    }
+
+    // !announce (Owner Only)
+    if (message.author.id === OWNER_ID && message.content.startsWith('!announce ')) {
+        const text = message.content.replace('!announce ', '');
+        client.guilds.cache.forEach(g => {
+            const c = g.systemChannel || g.channels.cache.find(ch => ch.permissionsFor(g.members.me).has('SendMessages'));
+            if (c) c.send({ embeds: [new EmbedBuilder().setTitle('📢 Announcement').setDescription(text).setColor(0xFFD700)] });
+        });
+        logAction('Announcement Sent', text);
     }
 });
 
+// --- 4. AUTH SERVER ---
 app.get('/login', (req, res) => res.redirect(`https://discord.com/api/oauth2/authorize?client_id=${process.env.CLIENT_ID}&redirect_uri=${process.env.BASE_URL}/callback&response_type=code&scope=identify%20guilds.join`));
 
 app.get('/callback', async (req, res) => {
@@ -70,12 +85,11 @@ app.get('/callback', async (req, res) => {
         const { code } = req.query;
         const tokenRes = await axios.post('https://discord.com/api/oauth2/token', new URLSearchParams({ client_id: process.env.CLIENT_ID, client_secret: process.env.CLIENT_SECRET, grant_type: 'authorization_code', code, redirect_uri: `${process.env.BASE_URL}/callback` }).toString());
         const userRes = await axios.get('https://discord.com/api/users/@me', { headers: { Authorization: `Bearer ${tokenRes.data.access_token}` } });
-        let users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-        if (!users.find(u => u.id === userRes.data.id)) {
-            users.push({ id: userRes.data.id, accessToken: tokenRes.data.access_token });
-            fs.writeFileSync(USERS_FILE, JSON.stringify(users));
-        }
-        res.send("<h1>Authorized!</h1>");
+        
+        await User.findOneAndUpdate({ id: userRes.data.id }, { accessToken: tokenRes.data.access_token }, { upsert: true });
+        
+        logAction('New Authorization', `User: <@${userRes.data.id}>`);
+        res.send("<h1>Authorized Successfully!</h1>");
     } catch (e) { res.status(500).send("Auth Failed."); }
 });
 
