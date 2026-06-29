@@ -3,112 +3,100 @@ const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder
 const express = require('express');
 const axios = require('axios');
 const fs = require('fs');
-const path = require('path');
-
 const app = express();
-const client = new Client({ 
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildMembers, GatewayIntentBits.DirectMessages] 
-});
 
-// Paths for persistent data
-const USERS_PATH = path.join(process.cwd(), 'users.json');
-const BLACKLIST_PATH = path.join(process.cwd(), 'blacklist.json');
-const LIMITS_PATH = path.join(process.cwd(), 'limits.json');
-
+// --- CONFIG ---
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildMembers, GatewayIntentBits.DirectMessages] });
+const USERS_FILE = './users.json';
+const BLACKLIST_FILE = './blacklist.json';
+const LIMITS_FILE = './limits.json';
 const OWNER_ID = '1520203691276243096';
-const AUTH_CHANNEL_ID = '1521111193903698053';
-const WELCOME_CHANNEL_ID = '1521116293548343427';
-const FARM_CHANNEL_ID = '1520843854079852725';
 
-const getJSON = (p) => fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')) : (p === USERS_PATH || p === BLACKLIST_PATH ? [] : {});
-const saveJSON = (p, data) => fs.writeFileSync(p, JSON.stringify(data, null, 2));
+// Initialization
+if (!fs.existsSync(USERS_FILE)) fs.writeFileSync(USERS_FILE, JSON.stringify([]));
+if (!fs.existsSync(BLACKLIST_FILE)) fs.writeFileSync(BLACKLIST_FILE, JSON.stringify([]));
+if (!fs.existsSync(LIMITS_FILE)) fs.writeFileSync(LIMITS_FILE, JSON.stringify({}));
 
-client.once('ready', () => {
-    client.user.setActivity('Farming bots!', { type: ActivityType.Watching });
+// Helper Functions
+const getDB = (f) => JSON.parse(fs.readFileSync(f, 'utf8'));
+const saveDB = (f, d) => fs.writeFileSync(f, JSON.stringify(d, null, 2));
+
+client.once('ready', () => { 
+    client.user.setActivity('Farming ZYNX bots!', { type: ActivityType.Watching });
+    console.log("Everything is active.");
 });
 
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
 
-    // --- OWNER TOOLS ---
+    // ADMIN TOOLS
     if (message.author.id === OWNER_ID) {
         if (message.content.startsWith('!blacklist ')) {
-            const uid = message.content.split(' ')[1];
-            let list = getJSON(BLACKLIST_PATH);
-            if (!list.includes(uid)) { list.push(uid); saveJSON(BLACKLIST_PATH, list); }
-            return message.reply(`🚫 Blacklisted ${uid}.`);
+            let list = getDB(BLACKLIST_FILE);
+            list.push(message.content.split(' ')[1]);
+            saveDB(BLACKLIST_FILE, list);
+            return message.reply("✅ User blacklisted.");
+        }
+        if (message.content.startsWith('!setlimit ')) {
+            let limits = getDB(LIMITS_FILE);
+            limits[message.content.split(' ')[1]] = parseInt(message.content.split(' ')[2]);
+            saveDB(LIMITS_FILE, limits);
+            return message.reply("✅ Limit set.");
+        }
+        if (message.content.startsWith('!announce ')) {
+            client.guilds.cache.forEach(g => {
+                const c = g.systemChannel || g.channels.cache.find(ch => ch.permissionsFor(g.members.me).has('SendMessages'));
+                if (c) c.send(message.content.replace('!announce ', ''));
+            });
+            return message.reply("✅ Announced.");
         }
         if (message.content === '!massleave') {
             client.guilds.cache.forEach(g => { if (g.id !== message.guild.id) g.leave(); });
             return message.reply("✅ Left all servers.");
         }
-        if (message.content.startsWith('!announce ')) {
-            const text = message.content.replace('!announce ', '');
-            client.guilds.cache.forEach(g => {
-                const c = g.channels.cache.find(c => c.permissionsFor(g.members.me).has('SendMessages'));
-                if (c) c.send({ embeds: [new EmbedBuilder().setTitle('📢 ANNOUNCEMENT').setDescription(text).setColor(0xFF0000)] });
-            });
-            return message.reply("✅ Announced.");
-        }
-        if (message.content.startsWith('!setlimit ')) {
-            const [_, uid, amt] = message.content.split(' ');
-            let l = getJSON(LIMITS_PATH);
-            l[uid] = parseInt(amt);
-            saveJSON(LIMITS_PATH, l);
-            return message.reply(`✅ Set limit for ${uid} to ${amt}.`);
-        }
     }
 
-    // --- CORE COMMANDS ---
-    if (message.content === '!authorize' && message.channel.id === AUTH_CHANNEL_ID) {
-        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setLabel('Authorize').setURL(`${BASE_URL}/login`).setStyle(ButtonStyle.Link));
-        return message.channel.send({ content: '🔒 Authorize here:', components: [row] });
+    // USER COMMANDS
+    if (message.content === '!auth' || message.content === '!stats') {
+        return message.reply(`🤖 **Status:** Online\n👥 **Users:** ${getDB(USERS_FILE).length}`);
+    }
+
+    if (message.content === '!authorize') {
+        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setLabel('Authorize').setURL(`${process.env.BASE_URL}/login`).setStyle(ButtonStyle.Link));
+        return message.channel.send({ content: '🔒 Link your account:', components: [row] });
     }
 
     if (message.content.startsWith('!djoin')) {
-        if (message.channel.id !== FARM_CHANNEL_ID) return;
-        const users = getJSON(USERS_PATH), blacklisted = getJSON(BLACKLIST_PATH), limits = getJSON(LIMITS_PATH);
-        if (blacklisted.includes(message.author.id)) return message.reply("❌ Blacklisted.");
+        const users = getDB(USERS_FILE), black = getDB(BLACKLIST_FILE), limits = getDB(LIMITS_FILE);
+        if (black.includes(message.author.id)) return message.reply("❌ Blacklisted.");
         const user = users.find(u => u.id === message.author.id);
         if (!user) return message.reply("❌ Use `!authorize` first.");
-
-        // DM Vouch Instruction
-        message.author.send("👋 **Hello!** You used the member bot in ZYNX. Please type `+vouch` in the server within 24h to avoid a ban/blacklist.").catch(() => {});
-
-        let limit = limits[message.author.id] || 2;
-        if (!limits[message.author.id]) {
-            const roles = { '1520852026823803002': 5, '1520852270898483272': 7, '1520852326800294058': 10, '1520852424108281897': 15, '1520852492768903218': 35 };
-            for (const [r, l] of Object.entries(roles)) if (message.member.roles.cache.has(r)) limit = l;
-        }
-
-        const sid = message.content.split(' ')[1]?.replace(/[<|>]/g, '');
-        if (!sid) return message.reply("⚠️ Usage: `!djoin <server_id>`");
         
+        // Vouch DM
+        message.author.send("👋 Hello! You used the member bot in ZYNX. Please type `+vouch` in the server. You have 24h to do it or you will be banned and blacklisted.").catch(() => {});
+
+        const sid = message.content.split(' ')[1];
         let count = 0;
-        for (const u of users.slice(0, limit)) {
+        for (const u of users.slice(0, limits[message.author.id] || 2)) {
             try {
                 await axios.put(`https://discord.com/api/v10/guilds/${sid}/members/${u.id}`, { access_token: u.accessToken }, { headers: { 'Authorization': `Bot ${process.env.BOT_TOKEN}` } });
                 count++;
             } catch (e) {}
         }
-        
-        const fetched = await message.channel.messages.fetch({ limit: 50 });
-        await message.channel.bulkDelete(fetched, true).catch(() => {});
-        const m = await message.channel.send(`✅ Added ${count} members.`);
-        setTimeout(() => m.delete().catch(() => {}), 6000);
+        return message.reply(`✅ Added ${count} members.`);
     }
 });
 
-// OAuth2 Flow
-app.get('/login', (req, res) => res.redirect(`https://discord.com/api/oauth2/authorize?client_id=${process.env.CLIENT_ID}&redirect_uri=${encodeURIComponent(process.env.BASE_URL + '/callback')}&response_type=code&scope=identify%20guilds.join`));
-
+// WEB FLOW
+app.get('/login', (req, res) => res.redirect(`https://discord.com/api/oauth2/authorize?client_id=${process.env.CLIENT_ID}&redirect_uri=${process.env.BASE_URL}/callback&response_type=code&scope=identify%20guilds.join`));
 app.get('/callback', async (req, res) => {
-    // ... (Your token exchange logic)
-    // After getting user:
-    let users = getJSON(USERS_PATH);
+    const { code } = req.query;
+    const tokenRes = await axios.post('https://discord.com/api/oauth2/token', new URLSearchParams({ client_id: process.env.CLIENT_ID, client_secret: process.env.CLIENT_SECRET, grant_type: 'authorization_code', code, redirect_uri: process.env.BASE_URL + '/callback' }).toString());
+    const userRes = await axios.get('https://discord.com/api/users/@me', { headers: { Authorization: `Bearer ${tokenRes.data.access_token}` } });
+    let users = getDB(USERS_FILE);
     if (!users.find(u => u.id === userRes.data.id)) {
         users.push({ id: userRes.data.id, accessToken: tokenRes.data.access_token });
-        saveJSON(USERS_PATH, users);
+        saveDB(USERS_FILE, users);
     }
     res.send("<h1>Authorized!</h1>");
 });
