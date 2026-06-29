@@ -8,6 +8,7 @@ const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] 
 });
 
+// Using a hardcoded URL to prevent the 'undefined' error
 const BASE_URL = 'https://my-discord-bot-4h98.onrender.com';
 
 app.get('/login', (req, res) => {
@@ -15,8 +16,8 @@ app.get('/login', (req, res) => {
 });
 
 app.get('/callback', async (req, res) => {
+    const { code } = req.query;
     try {
-        const { code } = req.query;
         await axios.post('https://discord.com/api/oauth2/token', new URLSearchParams({
             client_id: process.env.CLIENT_ID,
             client_secret: process.env.CLIENT_SECRET,
