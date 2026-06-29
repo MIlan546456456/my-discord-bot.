@@ -3,11 +3,11 @@ const { Client, GatewayIntentBits, EmbedBuilder, ActivityType } = require('disco
 const express = require('express');
 const axios = require('axios');
 const mongoose = require('mongoose');
-const cron = require('node-cron'); 
+const cron = require('node-cron');
 const app = express();
 
-// --- 1. SETUP & DATABASE ---
-mongoose.connect(process.env.MONGODB_URI).then(() => console.log("✅ Database Connected"));
+// --- 1. SETUP ---
+mongoose.connect(process.env.MONGODB_URI).then(() => console.log("✅ DB Connected"));
 const User = mongoose.model('User', new mongoose.Schema({ id: String, accessToken: String }));
 
 const client = new Client({ 
@@ -15,23 +15,22 @@ const client = new Client({
 });
 
 // --- 2. CONFIG ---
-const ANNOUNCE_CHANNEL_ID = '1521300660988149980'; // Where it says the announcement
-const TUTORIAL_CHANNEL_ID = '1520881451606737066'; // Where tutorial is
-const FARM_CHANNEL_ID = '1520843854079852725';
+const ANNOUNCE_CHANNEL = '1521300660988149980';
+const TUTORIAL_CHANNEL = '1520881451606737066';
+const FARM_CHANNEL = '1520843854079852725';
 const INVITE_LINK = 'discord.gg/qdkRRrQkF';
 
-// --- 3. DAILY ANNOUNCEMENT (Cron Job) ---
-// Runs at 01:50 every day
+// --- 3. DAILY ANNOUNCEMENT ---
+// Runs at 01:50 daily
 cron.schedule('50 01 * * *', async () => {
-    const channel = client.channels.cache.get(ANNOUNCE_CHANNEL_ID);
+    const channel = client.channels.cache.get(ANNOUNCE_CHANNEL);
     if (!channel) return;
 
     const count = await User.countDocuments();
     const embed = new EmbedBuilder()
         .setTitle('📢 Member Base Restock')
-        .setDescription(`We have Been Restocked!\n\n**Authorized Accounts Available:** ${count}\n\nGo to <#${FARM_CHANNEL_ID}> to farm.\nGo to <#${TUTORIAL_CHANNEL_ID}> to learn how to farm.\n\n*Powered By Zynx*`)
-        .setColor(0x00FF00)
-        .setTimestamp();
+        .setDescription(`We have Been Restocked!\n\n**Authorized Accounts Available:** ${count}\n\nGo to <#${FARM_CHANNEL}> to farm.\nGo to <#${TUTORIAL_CHANNEL}> to learn how to farm.\n\n*Powered By Zynx*`)
+        .setColor(0x00FF00);
     
     channel.send({ embeds: [embed] }).catch(console.error);
 });
@@ -39,7 +38,7 @@ cron.schedule('50 01 * * *', async () => {
 // --- 4. BOT LOGIC ---
 client.once('ready', () => {
     console.log(`🚀 Bot is live: ${client.user.tag}`);
-    setInterval(() => client.user.setActivity(INVITE_LINK, { type: ActivityType.Watching }), 60000);
+    client.user.setActivity(INVITE_LINK, { type: ActivityType.Watching });
 });
 
 client.on('messageCreate', async (msg) => {
@@ -52,7 +51,7 @@ client.on('messageCreate', async (msg) => {
     }
 
     if (msg.content.startsWith('!djoin')) {
-        if (msg.channel.id !== FARM_CHANNEL_ID) return;
+        if (msg.channel.id !== FARM_CHANNEL) return;
         const count = await User.countDocuments();
         msg.reply(`✅ Initializing join for **${count}** members.`);
     }
