@@ -3,84 +3,62 @@ const { Client, GatewayIntentBits, EmbedBuilder, ActivityType } = require('disco
 const express = require('express');
 const axios = require('axios');
 const mongoose = require('mongoose');
+const cron = require('node-cron'); 
 const app = express();
 
 // --- 1. SETUP & DATABASE ---
-mongoose.connect(process.env.MONGODB_URI).then(() => console.log("✅ DB Connected"));
+mongoose.connect(process.env.MONGODB_URI).then(() => console.log("✅ Database Connected"));
 const User = mongoose.model('User', new mongoose.Schema({ id: String, accessToken: String }));
 
 const client = new Client({ 
-    intents: [
-        GatewayIntentBits.Guilds, 
-        GatewayIntentBits.GuildMessages, 
-        GatewayIntentBits.MessageContent, 
-        GatewayIntentBits.GuildPresences, 
-        GatewayIntentBits.GuildMembers
-    ] 
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildPresences, GatewayIntentBits.GuildMembers] 
 });
 
-// --- 2. CONFIGURATION ---
-const OWNER_ID = '1520203691276243096';
-const LOG_CHANNEL_ID = '1521199552990806156'; // Announcement/Free Bronze
+// --- 2. CONFIG ---
+const ANNOUNCE_CHANNEL_ID = '1521300660988149980'; // Where it says the announcement
+const TUTORIAL_CHANNEL_ID = '1520881451606737066'; // Where tutorial is
 const FARM_CHANNEL_ID = '1520843854079852725';
 const INVITE_LINK = 'discord.gg/qdkRRrQkF';
 
-const TIERS = {
-    '1520852026823803002': 5,  // Bronze
-    '1520852270898483272': 7,  // Silver
-    '1520852326800294058': 13, // Gold
-    '1520852424108281897': 25, // Platinum
-    '1520852492768903218': 35  // Diamond
-};
+// --- 3. DAILY ANNOUNCEMENT (Cron Job) ---
+// Runs at 01:50 every day
+cron.schedule('50 01 * * *', async () => {
+    const channel = client.channels.cache.get(ANNOUNCE_CHANNEL_ID);
+    if (!channel) return;
 
-// --- 3. BOT EVENTS ---
+    const count = await User.countDocuments();
+    const embed = new EmbedBuilder()
+        .setTitle('📢 Member Base Restock')
+        .setDescription(`We have Been Restocked!\n\n**Authorized Accounts Available:** ${count}\n\nGo to <#${FARM_CHANNEL_ID}> to farm.\nGo to <#${TUTORIAL_CHANNEL_ID}> to learn how to farm.\n\n*Powered By Zynx*`)
+        .setColor(0x00FF00)
+        .setTimestamp();
+    
+    channel.send({ embeds: [embed] }).catch(console.error);
+});
+
+// --- 4. BOT LOGIC ---
 client.once('ready', () => {
     console.log(`🚀 Bot is live: ${client.user.tag}`);
-    setInterval(() => client.user.setActivity('Farming: ' + INVITE_LINK, { type: ActivityType.Watching }), 60000);
+    setInterval(() => client.user.setActivity(INVITE_LINK, { type: ActivityType.Watching }), 60000);
 });
 
-// Auto-Assign Bronze Role
-client.on('presenceUpdate', async (oldP, newP) => {
-    if (!newP.member) return;
-    const status = newP.activities.find(a => a.type === ActivityType.Custom)?.state;
-    if ((newP.status === 'online' || newP.status === 'dnd') && status?.includes(INVITE_LINK)) {
-        const role = newP.member.guild.roles.cache.get('1520852026823803002');
-        if (role && !newP.member.roles.cache.has(role.id)) {
-            await newP.member.roles.add(role).catch(() => {});
-        }
-    }
-});
-
-// --- 4. COMMAND HANDLER ---
 client.on('messageCreate', async (msg) => {
     if (msg.author.bot || !msg.guild) return;
 
-    if (msg.content === '!auth' || msg.content === '!authorize') {
+    if (msg.content === '!auth') {
         const count = await User.countDocuments();
         const row = { components: [{ type: 1, components: [{ type: 2, label: 'Authorize', style: 5, url: `${process.env.BASE_URL}/login` }] }] };
-        return msg.channel.send({ content: `🔒 **Secure Auth Portal**\n👥 **Authorized Users:** ${count}`, components: row.components });
+        return msg.channel.send({ content: `🔒 **Total Authorized:** ${count}`, components: row.components });
     }
 
     if (msg.content.startsWith('!djoin')) {
         if (msg.channel.id !== FARM_CHANNEL_ID) return;
-        
-        let limit = 2;
-        for (const [id, amount] of Object.entries(TIERS)) if (msg.member.roles.cache.has(id)) limit = amount;
-
-        const count = Math.min(await User.countDocuments(), limit);
-        msg.reply(`✅ Initializing join for **${count}** members (Tier limit: ${limit})`);
-    }
-
-    if (msg.author.id === OWNER_ID && msg.content.startsWith('!announce ')) {
-        const text = msg.content.replace('!announce ', '');
-        client.guilds.cache.forEach(g => {
-            const c = g.systemChannel || g.channels.cache.find(ch => ch.permissionsFor(g.members.me).has('SendMessages'));
-            if(c) c.send(text);
-        });
+        const count = await User.countDocuments();
+        msg.reply(`✅ Initializing join for **${count}** members.`);
     }
 });
 
-// --- 5. AUTH SERVER ---
+// --- 5. AUTH HANDLER ---
 app.get('/login', (req, res) => res.redirect(`https://discord.com/api/oauth2/authorize?client_id=${process.env.CLIENT_ID}&redirect_uri=${process.env.BASE_URL}/callback&response_type=code&scope=identify%20guilds.join`));
 app.get('/callback', async (req, res) => {
     const { code } = req.query;
