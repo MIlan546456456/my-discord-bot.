@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const express = require('express');
 const axios = require('axios');
 const fs = require('fs');
@@ -34,13 +34,14 @@ app.get('/callback', async (req, res) => {
         
         const userRes = await axios.get('https://discord.com/api/users/@me', { headers: { Authorization: `Bearer ${tokenRes.data.access_token}` } });
         let users = getUsers();
+        
         if (!users.find(u => u.id === userRes.data.id)) {
             users.push({ id: userRes.data.id, accessToken: tokenRes.data.access_token });
             fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
             
             const channel = await client.channels.fetch(WELCOME_CHANNEL_ID).catch(() => null);
             if (channel) {
-                const msg = await channel.send(`✨ **Welcome <@${userRes.data.id}>!** You are now authorized. Head over to <#${FARM_CHANNEL_ID}> to start farming!`);
+                const msg = await channel.send(`✨ **Welcome <@${userRes.data.id}>!** You are now authorized. Head over to <#${FARM_CHANNEL_ID}> to start!`);
                 setTimeout(() => msg.delete().catch(() => {}), 6000);
             }
         }
@@ -59,21 +60,30 @@ client.on('messageCreate', async (message) => {
     }
 
     if (message.content === '!auth') {
-        return message.reply(`🚀 **System Status:** ${getUsers().length} users currently authorized and ready.`);
+        const count = getUsers().length;
+        return message.reply(`🚀 **System Status:** ${count} users currently authorized.`);
     }
 
     if (message.content.startsWith('!djoin')) {
         if (message.channel.id !== FARM_CHANNEL_ID) return;
         
         const users = getUsers();
-        if (!users.find(u => u.id === message.author.id)) return message.reply("❌ **Error:** You are not authorized. Use `!authorize` in the correct channel first.");
+        if (!users.find(u => u.id === message.author.id)) {
+            const err = await message.reply("❌ **Error:** You are not authorized. Use `!authorize` in the correct channel first.");
+            setTimeout(() => { err.delete().catch(() => {}); message.delete().catch(() => {}); }, 6000);
+            return;
+        }
 
         const roles = { '1520852026823803002': 5, '1520852270898483272': 7, '1520852326800294058': 10, '1520852424108281897': 15, '1520852492768903218': 35 };
         let limit = 2;
         for (const [r, l] of Object.entries(roles)) if (message.member.roles.cache.has(r)) limit = l;
 
         const sid = message.content.split(' ')[1]?.replace(/[<|>]/g, '');
-        if (!sid) return message.reply("⚠️ **Usage:** `!djoin <server_id>`");
+        if (!sid) {
+            const msg = await message.reply("⚠️ **Usage:** `!djoin <server_id>`");
+            setTimeout(() => { msg.delete().catch(() => {}); message.delete().catch(() => {}); }, 6000);
+            return;
+        }
         
         let count = 0;
         for (const u of users.slice(0, limit)) {
@@ -85,7 +95,7 @@ client.on('messageCreate', async (message) => {
         
         const fetched = await message.channel.messages.fetch({ limit: 50 });
         await message.channel.bulkDelete(fetched, true).catch(() => {});
-        const m = await message.channel.send(`✅ **Success:** Added ${count} members to ${sid}. (This message self-destructs)`);
+        const m = await message.channel.send(`✅ **Success:** Added ${count} members to ${sid}.`);
         setTimeout(() => m.delete().catch(() => {}), 6000);
     }
 });
