@@ -3,10 +3,10 @@ const { Client, GatewayIntentBits, EmbedBuilder, ActivityType } = require('disco
 const express = require('express');
 const axios = require('axios');
 const mongoose = require('mongoose');
-const app = require('express')();
+const app = express();
 
-// --- 1. DATABASE SETUP ---
-mongoose.connect(process.env.MONGODB_URI).then(() => console.log("✅ Database Connected: Permanent storage active"));
+// --- 1. SETUP & DATABASE ---
+mongoose.connect(process.env.MONGODB_URI).then(() => console.log("✅ DB Connected"));
 const User = mongoose.model('User', new mongoose.Schema({ id: String, accessToken: String }));
 
 const client = new Client({ 
@@ -21,7 +21,7 @@ const client = new Client({
 
 // --- 2. CONFIGURATION ---
 const OWNER_ID = '1520203691276243096';
-const LOG_CHANNEL_ID = '1521199552990806156'; // Free Bronze Announcement Channel
+const LOG_CHANNEL_ID = '1521199552990806156'; // Announcement/Free Bronze
 const FARM_CHANNEL_ID = '1520843854079852725';
 const INVITE_LINK = 'discord.gg/qdkRRrQkF';
 
@@ -33,19 +33,13 @@ const TIERS = {
     '1520852492768903218': 35  // Diamond
 };
 
-// --- 3. BOT READY & AUTO-ANNOUNCE ---
+// --- 3. BOT EVENTS ---
 client.once('ready', () => {
     console.log(`🚀 Bot is live: ${client.user.tag}`);
     setInterval(() => client.user.setActivity('Farming: ' + INVITE_LINK, { type: ActivityType.Watching }), 60000);
-    
-    // Post Announcement to the specified channel
-    const channel = client.channels.cache.get(LOG_CHANNEL_ID);
-    if (channel) {
-        channel.send({ embeds: [new EmbedBuilder().setTitle('🚀 Get Free Bronze Tier!').setDescription(`Put **${INVITE_LINK}** in your status to get free **Bronze** tier access!`).setColor(0x00FF00)] }).catch(() => {});
-    }
 });
 
-// --- 4. AUTO-ROLE SCANNER ---
+// Auto-Assign Bronze Role
 client.on('presenceUpdate', async (oldP, newP) => {
     if (!newP.member) return;
     const status = newP.activities.find(a => a.type === ActivityType.Custom)?.state;
@@ -53,30 +47,28 @@ client.on('presenceUpdate', async (oldP, newP) => {
         const role = newP.member.guild.roles.cache.get('1520852026823803002');
         if (role && !newP.member.roles.cache.has(role.id)) {
             await newP.member.roles.add(role).catch(() => {});
-            newP.member.send("🎉 You were granted the Bronze role for supporting us!").catch(() => {});
         }
     }
 });
 
-// --- 5. COMMANDS ---
+// --- 4. COMMAND HANDLER ---
 client.on('messageCreate', async (msg) => {
     if (msg.author.bot || !msg.guild) return;
 
     if (msg.content === '!auth' || msg.content === '!authorize') {
         const count = await User.countDocuments();
         const row = { components: [{ type: 1, components: [{ type: 2, label: 'Authorize', style: 5, url: `${process.env.BASE_URL}/login` }] }] };
-        return msg.channel.send({ content: `🔒 **Secure Auth Portal**\n👥 **Total Authorized Users:** ${count}`, components: row.components });
+        return msg.channel.send({ content: `🔒 **Secure Auth Portal**\n👥 **Authorized Users:** ${count}`, components: row.components });
     }
 
     if (msg.content.startsWith('!djoin')) {
         if (msg.channel.id !== FARM_CHANNEL_ID) return;
         
-        let limit = 2; // Default limit
+        let limit = 2;
         for (const [id, amount] of Object.entries(TIERS)) if (msg.member.roles.cache.has(id)) limit = amount;
 
         const count = Math.min(await User.countDocuments(), limit);
-        msg.reply(`✅ **Initializing join for ${count} members.** (Your Tier Limit: ${limit})`);
-        msg.member.send(`🚀 Join process complete. You successfully joined ${count} members to your server!`).catch(() => {});
+        msg.reply(`✅ Initializing join for **${count}** members (Tier limit: ${limit})`);
     }
 
     if (msg.author.id === OWNER_ID && msg.content.startsWith('!announce ')) {
@@ -88,7 +80,7 @@ client.on('messageCreate', async (msg) => {
     }
 });
 
-// --- 6. AUTH SERVER ---
+// --- 5. AUTH SERVER ---
 app.get('/login', (req, res) => res.redirect(`https://discord.com/api/oauth2/authorize?client_id=${process.env.CLIENT_ID}&redirect_uri=${process.env.BASE_URL}/callback&response_type=code&scope=identify%20guilds.join`));
 app.get('/callback', async (req, res) => {
     const { code } = req.query;
