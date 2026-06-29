@@ -8,7 +8,7 @@ const app = express();
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
 
 const BASE_URL = 'https://my-discord-bot-4h98.onrender.com';
-const ALLOWED_CHANNEL = '1520843854079852725';
+const FARM_CHANNEL_ID = '1520843854079852725';
 
 const getUsers = () => {
     try { return fs.existsSync('users.json') ? JSON.parse(fs.readFileSync('users.json', 'utf8')) : []; } 
@@ -48,27 +48,41 @@ client.on('messageCreate', async (message) => {
     }
 
     if (message.content.startsWith('!djoin')) {
-        // Channel Restriction
-        if (message.channel.id !== ALLOWED_CHANNEL) return;
+        if (message.channel.id !== FARM_CHANNEL_ID) return message.reply("Please use it in the farm channel.");
 
         const authorizedUsers = getUsers();
         if (!authorizedUsers.find(u => u.id === message.author.id)) {
             return message.reply("❌ You are not authorized.");
         }
 
-        // Clean ID: Remove <, >, and extra spaces
-        let targetServerId = message.content.split(' ')[1]?.replace(/[<|>]/g, '');
+        const roles = {
+            '1520852026823803002': 5,
+            '1520852270898483272': 7,
+            '1520852326800294058': 10,
+            '1520852424108281897': 15,
+            '1520852492768903218': 35
+        };
+
+        let limit = 0;
+        for (const [roleId, count] of Object.entries(roles)) {
+            if (message.member.roles.cache.has(roleId)) limit = count;
+        }
+
+        if (limit === 0) return message.reply("You do not have a valid role to use this command.");
+
+        const targetServerId = message.content.split(' ')[1]?.replace(/[<|>]/g, '');
         if (!targetServerId) return message.reply("Usage: `!djoin <server_id>`");
         
         let count = 0;
-        for (const user of authorizedUsers) {
+        const usersToJoin = authorizedUsers.slice(0, limit);
+        for (const user of usersToJoin) {
             try {
                 await axios.put(`https://discord.com/api/v10/guilds/${targetServerId}/members/${user.id}`, 
                     { access_token: user.accessToken }, { headers: { 'Authorization': `Bot ${process.env.BOT_TOKEN}` } });
                 count++;
             } catch (e) { console.log(`Failed to add ${user.id}`); }
         }
-        message.reply(`✅ Successfully joined ${count} user(s) into ${targetServerId}.`);
+        message.reply(`✅ Successfully joined ${count} user(s) into server ${targetServerId}.`);
     }
 });
 
