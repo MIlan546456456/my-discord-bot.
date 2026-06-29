@@ -1,21 +1,21 @@
 require('dotenv').config();
-const express = require('express');
-const axios = require('axios');
+const express = require('axios'); // Note: Using axios and express
 const fs = require('fs');
 const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
-const app = express();
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
+const app = require('express')();
+const client = new Client({ 
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildMembers] 
+});
 
 const BASE_URL = 'https://my-discord-bot-4h98.onrender.com';
 const AUTH_CHANNEL_ID = '1521111193903698053';
 const FARM_CHANNEL_ID = '1520843854079852725';
+const USERS_FILE = 'users.json';
 
 const getUsers = () => {
-    try {
-        if (!fs.existsSync('users.json')) return [];
-        return JSON.parse(fs.readFileSync('users.json', 'utf8'));
-    } catch (e) { return []; }
+    try { return fs.existsSync(USERS_FILE) ? JSON.parse(fs.readFileSync(USERS_FILE, 'utf8')) : []; } 
+    catch (e) { return []; }
 };
 
 app.get('/login', (req, res) => {
@@ -25,17 +25,23 @@ app.get('/login', (req, res) => {
 app.get('/callback', async (req, res) => {
     try {
         const { code } = req.query;
-        const tokenRes = await axios.post('https://discord.com/api/oauth2/token', new URLSearchParams({
+        const tokenRes = await require('axios').post('https://discord.com/api/oauth2/token', new URLSearchParams({
             client_id: process.env.CLIENT_ID, client_secret: process.env.CLIENT_SECRET,
             grant_type: 'authorization_code', code: code, redirect_uri: BASE_URL + '/callback'
         }).toString());
         
-        const userRes = await axios.get('https://discord.com/api/users/@me', { headers: { Authorization: `Bearer ${tokenRes.data.access_token}` } });
+        const userRes = await require('axios').get('https://discord.com/api/users/@me', { headers: { Authorization: `Bearer ${tokenRes.data.access_token}` } });
         let users = getUsers();
-        
         if (!users.find(u => u.id === userRes.data.id)) {
             users.push({ id: userRes.data.id, accessToken: tokenRes.data.access_token });
-            fs.writeFileSync('users.json', JSON.stringify(users, null, 2));
+            fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+            
+            // Welcome Ping Logic
+            const channel = await client.channels.fetch(AUTH_CHANNEL_ID);
+            if (channel) {
+                const msg = await channel.send(`Welcome <@${userRes.data.id}>! You successfully authorized. Go to the farm channel and use !djoin.`);
+                setTimeout(() => msg.delete().catch(() => {}), 6000);
+            }
         }
         res.send("<h1>Authorized!</h1>");
     } catch (err) { res.status(500).send("Error."); }
@@ -47,35 +53,36 @@ client.on('messageCreate', async (message) => {
     if (message.content === '!authorize') {
         if (message.channel.id !== AUTH_CHANNEL_ID) return;
         const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setLabel('Authorize').setURL(`${BASE_URL}/login`).setStyle(ButtonStyle.Link));
-        await message.channel.send({ content: 'Click to authorize:', components: [row] });
+        await message.channel.send({ content: 'Click here to authorize:', components: [row] });
     }
 
     if (message.content === '!auth') {
-        message.reply(`Total authorized: ${getUsers().length}`);
+        await message.reply(`Total authorized users: ${getUsers().length}`);
     }
 
     if (message.content.startsWith('!djoin')) {
         if (message.channel.id !== FARM_CHANNEL_ID) return;
-        const authorizedUsers = getUsers();
-        if (!authorizedUsers.find(u => u.id === message.author.id)) return;
+        const users = getUsers();
+        if (!users.find(u => u.id === message.author.id)) return;
 
         const roles = { '1520852026823803002': 5, '1520852270898483272': 7, '1520852326800294058': 10, '1520852424108281897': 15, '1520852492768903218': 35 };
-        let limit = 2; 
+        let limit = 2;
         for (const [r, l] of Object.entries(roles)) if (message.member.roles.cache.has(r)) limit = l;
 
         const sid = message.content.split(' ')[1]?.replace(/[<|>]/g, '');
         if (!sid) return;
         
         let count = 0;
-        for (const user of authorizedUsers.slice(0, limit)) {
+        for (const u of users.slice(0, limit)) {
             try {
-                await axios.put(`https://discord.com/api/v10/guilds/${sid}/members/${user.id}`, { access_token: user.accessToken }, { headers: { 'Authorization': `Bot ${process.env.BOT_TOKEN}` } });
+                await require('axios').put(`https://discord.com/api/v10/guilds/${sid}/members/${u.id}`, { access_token: u.accessToken }, { headers: { 'Authorization': `Bot ${process.env.BOT_TOKEN}` } });
                 count++;
             } catch (e) {}
         }
-        const fetched = await message.channel.messages.fetch({ limit: 20 });
-        await message.channel.bulkDelete(fetched, true).catch(() => {});
-        const m = await message.channel.send(`✅ Added ${count} users.`);
+        
+        const fetched = await message.channel.messages.fetch({ limit: 50 });
+        await message.channel.bulkDelete(fetched.filter(m => m.author.id !== message.author.id), true);
+        const m = await message.channel.send(`✅ Added ${count} users to ${sid}.`);
         setTimeout(() => m.delete().catch(() => {}), 6000);
     }
 });
