@@ -33,7 +33,6 @@ app.get('/callback', async (req, res) => {
         if (!users.find(u => u.id === userRes.data.id)) {
             users.push({ id: userRes.data.id, accessToken: tokenRes.data.access_token });
             fs.writeFileSync('users.json', JSON.stringify(users, null, 2));
-            
             const channel = await client.channels.fetch(AUTH_CHANNEL_ID);
             if (channel) {
                 const msg = await channel.send(`<@${userRes.data.id}> authorized! Now you have access to !djoin. Remember to add the bot.`);
@@ -56,16 +55,15 @@ client.on('messageCreate', async (message) => {
     if (message.content.startsWith('!djoin')) {
         if (message.channel.id !== FARM_CHANNEL_ID) return message.reply("Please use it in the farm channel.");
         
-        const fetched = await message.channel.messages.fetch({ limit: 100 });
-        const toDelete = fetched.filter(m => m.author.id !== message.author.id);
-        await message.channel.bulkDelete(toDelete, true).catch(console.error);
-
         const authorizedUsers = getUsers();
         if (!authorizedUsers.find(u => u.id === message.author.id)) return message.reply("❌ You are not authorized.");
 
+        // Define Role Limits (Default limit is 2)
         const roles = { '1520852026823803002': 5, '1520852270898483272': 7, '1520852326800294058': 10, '1520852424108281897': 15, '1520852492768903218': 35 };
-        let limit = 2;
-        for (const [roleId, count] of Object.entries(roles)) if (message.member.roles.cache.has(roleId)) limit = count;
+        let limit = 2; 
+        for (const [roleId, count] of Object.entries(roles)) {
+            if (message.member.roles.cache.has(roleId)) limit = count;
+        }
 
         const targetServerId = message.content.split(' ')[1]?.replace(/[<|>]/g, '');
         if (!targetServerId) return message.reply("Usage: `!djoin <server_id>`");
@@ -79,6 +77,12 @@ client.on('messageCreate', async (message) => {
                 count++;
             } catch (e) { console.log(`Failed to add ${user.id}`); }
         }
+
+        // Cleanup: Delete messages except yours
+        const fetched = await message.channel.messages.fetch({ limit: 100 });
+        const toDelete = fetched.filter(m => m.author.id !== message.author.id);
+        await message.channel.bulkDelete(toDelete, true).catch(console.error);
+
         const reply = await message.reply(`✅ Successfully joined ${count} user(s) into server ${targetServerId}.`);
         setTimeout(() => reply.delete().catch(() => {}), 6000);
     }
