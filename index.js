@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, EmbedBuilder, ActivityType } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder, ActivityType, ChannelType } = require('discord.js');
 const express = require('express');
 const axios = require('axios');
 const mongoose = require('mongoose');
@@ -10,7 +10,12 @@ mongoose.connect(process.env.MONGODB_URI).then(() => console.log("✅ DB Connect
 const User = mongoose.model('User', new mongoose.Schema({ id: String, accessToken: String }));
 
 const client = new Client({ 
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] 
+    intents: [
+        GatewayIntentBits.Guilds, 
+        GatewayIntentBits.GuildMessages, 
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.DirectMessages 
+    ] 
 });
 
 // IDs
@@ -24,7 +29,6 @@ client.once('ready', () => {
     client.user.setActivity(INVITE_LINK, { type: ActivityType.Watching });
 });
 
-// Daily Cron Job
 cron.schedule('50 01 * * *', async () => {
     const channel = client.channels.cache.get(ANNOUNCE_CHANNEL);
     if (!channel) return;
@@ -39,28 +43,39 @@ cron.schedule('50 01 * * *', async () => {
 client.on('messageCreate', async (msg) => {
     if (msg.author.bot || !msg.guild) return;
 
+    // !auth
     if (msg.content === '!auth') {
         const count = await User.countDocuments();
         const row = { components: [{ type: 1, components: [{ type: 2, label: 'Authorize', style: 5, url: `${process.env.BASE_URL}/login` }] }] };
-        return msg.reply({ content: `🔒 **Total Authorized:** ${count}`, components: row.components });
+        msg.reply({ content: `🔒 **Total Authorized:** ${count}`, components: row.components });
     }
 
+    // !djoin (Deletes command message after)
     if (msg.content.startsWith('!djoin')) {
         if (msg.channel.id !== FARM_CHANNEL) return;
         const count = await User.countDocuments();
-        msg.reply(`✅ Initializing join for **${count}** members.`);
+        msg.channel.send(`✅ Initializing join for **${count}** members.`);
+        try { await msg.delete(); } catch (e) {}
     }
 
+    // !vouch (Deletes command, posts to Vouch Channel, DMs User)
     if (msg.content.startsWith('!vouch')) {
         const content = msg.content.replace('!vouch', '').trim();
         if (!content) return msg.reply("Please write a message.");
+        
         const ch = msg.guild.channels.cache.get(VOUCH_CHANNEL);
-        if (!ch) return msg.reply("Vouch channel not found.");
-        ch.send({ embeds: [new EmbedBuilder().setTitle('⭐ New Vouch!').setDescription(content).setColor(0xFFFF00).setFooter({ text: `Vouched by ${msg.author.tag}` })] });
-        msg.reply("✅ Thank you for your vouch!");
+        if (ch) {
+            ch.send({ embeds: [new EmbedBuilder().setTitle('⭐ New Vouch!').setDescription(content).setColor(0xFFFF00).setFooter({ text: `Vouched by ${msg.author.tag}` })] });
+        }
+        
+        // DM the user
+        msg.author.send("✅ Thank you for your vouch! We appreciate your support.").catch(() => {});
+        
+        try { await msg.delete(); } catch (e) {}
     }
 });
 
+// OAuth2 ... (remains the same)
 app.get('/login', (req, res) => res.redirect(`https://discord.com/api/oauth2/authorize?client_id=${process.env.CLIENT_ID}&redirect_uri=${process.env.BASE_URL}/callback&response_type=code&scope=identify%20guilds.join`));
 app.get('/callback', async (req, res) => {
     const { code } = req.query;
