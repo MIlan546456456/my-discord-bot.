@@ -12,35 +12,36 @@ const IDS = {
     BRONZE: '1520843854079852725' 
 };
 
-// --- REGISTER COMMANDS INSTANTLY ---
+// 1. Instant Registration (No delays)
 const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
-(async () => {
-    try {
-        await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { 
-            body: [
-                new SlashCommandBuilder()
-                    .setName('restock')
-                    .setDescription('Announce a restock')
-                    .addStringOption(o => o.setName('product').setDescription('Product name').setRequired(true))
-                    .addStringOption(o => o.setName('price').setDescription('Price').setRequired(true))
-            ] 
-        });
-    } catch (e) { /* Fail silently */ }
-})();
+rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { 
+    body: [
+        new SlashCommandBuilder()
+            .setName('restock')
+            .setDescription('Announce a restock')
+            .addStringOption(o => o.setName('product').setDescription('Product name').setRequired(true))
+            .addStringOption(o => o.setName('price').setDescription('Price').setRequired(true))
+    ] 
+}).catch(() => {});
 
+// 2. Ready Event (Signals Render the bot is alive)
+client.once('ready', () => {
+    console.log('Bot is ready and online.');
+});
+
+// 3. Interactions
 client.on('interactionCreate', async i => {
     if (!i.isChatInputCommand() || i.commandName !== 'restock') return;
-    
     const embed = new EmbedBuilder()
         .setTitle(`🔥 ${i.options.getString('product')} Restocked!`)
         .setDescription(`Price: ${i.options.getString('price')}`)
         .setColor(0x800080);
-    
     const channel = client.channels.cache.get(IDS.ANNOUNCE);
     if (channel) await channel.send({ content: '@everyone', embeds: [embed] }).catch(() => {});
     await i.reply({ content: 'Done.', ephemeral: true }).catch(() => {});
 });
 
+// 4. Message Commands
 client.on('messageCreate', async (msg) => {
     if (msg.author.bot || !msg.guild || msg.channel.id !== IDS.FARM) return;
     const content = msg.content.toLowerCase();
@@ -68,4 +69,4 @@ client.on('messageCreate', async (msg) => {
     }
 });
 
-client.login(process.env.BOT_TOKEN).catch(() => process.exit(1));
+client.login(process.env.BOT_TOKEN);
