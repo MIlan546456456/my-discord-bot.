@@ -1,6 +1,15 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, Partials, EmbedBuilder, SlashCommandBuilder, REST, Routes } = require('discord.js');
 
+// --- WEB SERVER (REQUIRED FOR RENDER WEB SERVICE) ---
+const express = require('express');
+const app = express();
+const port = process.env.PORT || 3000;
+
+app.get('/', (req, res) => res.send('Bot is online.'));
+app.listen(port, () => console.log(`Web server listening on port ${port}`));
+
+// --- BOT LOGIC ---
 const client = new Client({ 
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildMembers],
     partials: [Partials.Channel, Partials.Message] 
@@ -12,24 +21,22 @@ const IDS = {
     BRONZE: '1520843854079852725' 
 };
 
-// 1. Instant Registration (No delays)
+// Slash Command Registration
 const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
-rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { 
-    body: [
-        new SlashCommandBuilder()
-            .setName('restock')
-            .setDescription('Announce a restock')
-            .addStringOption(o => o.setName('product').setDescription('Product name').setRequired(true))
-            .addStringOption(o => o.setName('price').setDescription('Price').setRequired(true))
-    ] 
-}).catch(() => {});
+(async () => {
+    try {
+        await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { 
+            body: [
+                new SlashCommandBuilder()
+                    .setName('restock')
+                    .setDescription('Announce a restock')
+                    .addStringOption(o => o.setName('product').setDescription('Product name').setRequired(true))
+                    .addStringOption(o => o.setName('price').setDescription('Price').setRequired(true))
+            ] 
+        });
+    } catch (e) {}
+})();
 
-// 2. Ready Event (Signals Render the bot is alive)
-client.once('ready', () => {
-    console.log('Bot is ready and online.');
-});
-
-// 3. Interactions
 client.on('interactionCreate', async i => {
     if (!i.isChatInputCommand() || i.commandName !== 'restock') return;
     const embed = new EmbedBuilder()
@@ -41,7 +48,6 @@ client.on('interactionCreate', async i => {
     await i.reply({ content: 'Done.', ephemeral: true }).catch(() => {});
 });
 
-// 4. Message Commands
 client.on('messageCreate', async (msg) => {
     if (msg.author.bot || !msg.guild || msg.channel.id !== IDS.FARM) return;
     const content = msg.content.toLowerCase();
