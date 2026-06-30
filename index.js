@@ -8,20 +8,20 @@ const client = new Client({
     partials: [Partials.Channel, Partials.Message] 
 });
 
-// --- GLOBAL ERROR HANDLERS (Fixes image_6623bc.png & image_6623f2.png) ---
+// --- GLOBAL ERROR HANDLERS ---
 client.on('error', (err) => console.error('❌ Discord Client Error:', err));
 process.on('unhandledRejection', (reason) => console.error('❌ Unhandled Rejection:', reason));
+
+// --- LOCKING SYSTEM (Prevents Doubling) ---
+const lastInteraction = new Map();
 
 mongoose.connect(process.env.MONGODB_URI).then(() => console.log("✅ DB Connected"));
 const User = mongoose.model('User', new mongoose.Schema({ id: String }));
 
 const IDS = { ANNOUNCE: '1521300660988149980', FARM: '1520843854079852725', VOUCH: '1521158198529364110' };
-const activeProcessing = new Set();
 
 client.once('ready', async () => {
     console.log(`✅ Zynx Elite Online: ${client.user.tag}`);
-    client.user.setActivity('Member Services', { type: ActivityType.Watching });
-
     const commands = [
         new SlashCommandBuilder()
             .setName('restock')
@@ -29,7 +29,6 @@ client.once('ready', async () => {
             .addStringOption(o => o.setName('product').setDescription('Product name').setRequired(true))
             .addStringOption(o => o.setName('price').setDescription('Price').setRequired(true))
     ].map(c => c.toJSON());
-
     const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
     await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
 });
@@ -37,14 +36,18 @@ client.once('ready', async () => {
 client.on('messageCreate', async (msg) => {
     if (msg.author.bot || !msg.guild) return;
 
+    // --- LOCK CHECK: Only allows command if 10 seconds have passed since last one ---
+    const now = Date.now();
+    if (lastInteraction.has(msg.author.id) && now - lastInteraction.get(msg.author.id) < 10000) return;
+    lastInteraction.set(msg.author.id, now);
+
     // !djoin: DM warning + Auto-Cleanup
-    if (msg.content.toLowerCase().startsWith('!djoin') && msg.channel.id === IDS.FARM && !activeProcessing.has(msg.author.id)) {
-        activeProcessing.add(msg.author.id);
+    if (msg.content.toLowerCase().startsWith('!djoin') && msg.channel.id === IDS.FARM) {
         await msg.author.send("👋 Hello! Please type `+vouch` in the server within 24h to avoid a ban/blacklist.").catch(() => {});
         const count = await User.countDocuments();
         const reply = await msg.channel.send(`✅ Initializing join for **${count}** members.`);
         await msg.delete().catch(() => {});
-        setTimeout(async () => { await reply.delete().catch(() => {}); activeProcessing.delete(msg.author.id); }, 5000);
+        setTimeout(async () => await reply.delete().catch(() => {}), 5000);
     }
 
     // +vouch: Logging + Auto-Cleanup
