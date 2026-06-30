@@ -12,9 +12,14 @@ const IDS = {
     BRONZE: '1520843854079852725' 
 };
 
-// Decoupled Registration
-async function registerCommands() {
+// --- STABLE STARTUP ---
+async function startBot() {
     try {
+        // Log in first to satisfy Render's startup speed requirements
+        await client.login(process.env.BOT_TOKEN);
+        console.log("Bot logged in successfully.");
+
+        // Register commands after login without blocking startup
         const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
         const commands = [
             new SlashCommandBuilder()
@@ -24,9 +29,11 @@ async function registerCommands() {
                 .addStringOption(o => o.setName('price').setDescription('Price').setRequired(true))
         ];
         await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
-    } catch (e) { console.error('Registration failed, continuing...'); }
+        console.log('Slash commands registered.');
+    } catch (err) {
+        console.error("Startup/Registration error:", err);
+    }
 }
-registerCommands();
 
 client.on('error', (err) => console.error('Client Error:', err.message));
 
@@ -62,9 +69,8 @@ client.on('messageCreate', async (msg) => {
     else if (msg.content.toLowerCase().startsWith('+vouch')) {
         await msg.delete().catch(() => {});
     }
-    // Added !invitebot
     else if (msg.content.toLowerCase().startsWith('!invitebot')) {
-        await msg.channel.send(`Here is my invite link: https://discord.com/oauth2/authorize?client_id=${process.env.CLIENT_ID}&permissions=8&scope=bot`).catch(() => {});
+        await msg.channel.send(`Invite: https://discord.com/oauth2/authorize?client_id=${process.env.CLIENT_ID}&permissions=8&scope=bot`).catch(() => {});
         await msg.delete().catch(() => {});
     }
     else if (!msg.content.startsWith('!')) {
@@ -72,4 +78,4 @@ client.on('messageCreate', async (msg) => {
     }
 });
 
-client.login(process.env.BOT_TOKEN);
+startBot();
