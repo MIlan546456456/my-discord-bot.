@@ -22,22 +22,22 @@ client.on('messageCreate', async (msg) => {
     if (msg.author.bot || !msg.guild) return;
     if (msg.channel.id !== IDS.FARM && msg.channel.id !== IDS.FREE_BRONZE) return;
 
-    const c = msg.content.toLowerCase();
-
-    if (c.startsWith('!auth')) {
-        await msg.channel.send(`Total Authorizations: ${authCount}`);
-        await msg.delete().catch(console.error);
-    } 
-    else if (c.startsWith('!djoin')) {
+    // Use startsWith so it ignores the extra numbers you saw in image_8f88a0.png
+    if (msg.content.startsWith('!djoin')) {
         authCount++;
-        // Fetch the member who SENT the message
-        const m = await msg.guild.members.fetch(msg.author.id).catch(e => console.error("Fetch error:", e));
-        if (m) {
-            await m.roles.add(IDS.ROLES.BRONZE).catch(e => console.error("Role error (Check hierarchy!):", e));
+        try {
+            await msg.member.roles.add(IDS.ROLES.BRONZE);
+            console.log("Successfully added role to: " + msg.author.username);
+            await msg.delete();
+        } catch (err) {
+            console.error("CRITICAL ERROR: Could not add role. Details:", err);
         }
-        await msg.delete().catch(console.error);
+    } 
+    else if (msg.content.startsWith('!auth')) {
+        await msg.channel.send(`Total Authorizations: ${authCount}`);
+        await msg.delete();
     }
-    else if (!c.startsWith('!')) {
+    else if (!msg.content.startsWith('!')) {
         await msg.delete().catch(console.error);
     }
 });
