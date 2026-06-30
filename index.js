@@ -2,13 +2,10 @@ require('dotenv').config();
 const { Client, GatewayIntentBits, Partials, EmbedBuilder, SlashCommandBuilder, REST, Routes } = require('discord.js');
 const express = require('express');
 
-// --- 1. WEB SERVER (Satisfies Render's port requirement) ---
+// 1. Web Server (Keeps Render instance alive)
 const app = express();
-const port = process.env.PORT || 3000;
-app.get('/', (req, res) => res.send('Zynx Engine is Online.'));
-app.listen(port, () => console.log(`Web server active on port ${port}`));
+app.listen(process.env.PORT || 3000);
 
-// --- 2. CLIENT SETUP ---
 const client = new Client({ 
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildMembers],
     partials: [Partials.Channel, Partials.Message] 
@@ -28,48 +25,38 @@ const IDS = {
     }
 };
 
-// --- 3. SLASH COMMAND REGISTRATION ---
+// 2. Slash Command Registration
 const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
 (async () => {
     try {
         await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { 
-            body: [
-                new SlashCommandBuilder()
-                    .setName('restock')
-                    .setDescription('Announce a restock')
-                    .addStringOption(o => o.setName('product').setDescription('Product name').setRequired(true))
-                    .addStringOption(o => o.setName('price').setDescription('Price').setRequired(true))
-            ] 
+            body: [new SlashCommandBuilder().setName('restock').setDescription('Announce a restock')
+                .addStringOption(o => o.setName('product').setDescription('Product name').setRequired(true))
+                .addStringOption(o => o.setName('price').setDescription('Price').setRequired(true))] 
         });
-    } catch (e) { console.error(e); }
+    } catch (e) {}
 })();
 
-// --- 4. INTERACTION & MESSAGE HANDLING ---
+// 3. Handlers
 client.on('interactionCreate', async i => {
     if (!i.isChatInputCommand() || i.commandName !== 'restock') return;
-    const embed = new EmbedBuilder()
-        .setTitle(`🔥 ${i.options.getString('product')} Restocked!`)
-        .setDescription(`Price: ${i.options.getString('price')}`)
-        .setColor(0x800080);
+    const embed = new EmbedBuilder().setTitle(`🔥 ${i.options.getString('product')} Restocked!`).setDescription(`Price: ${i.options.getString('price')}`).setColor(0x800080);
     const channel = client.channels.cache.get(IDS.ANNOUNCE);
     if (channel) await channel.send({ content: '@everyone', embeds: [embed] }).catch(() => {});
     await i.reply({ content: 'Restock announced.', ephemeral: true }).catch(() => {});
 });
 
 client.on('messageCreate', async (msg) => {
-    if (msg.author.bot || !msg.guild) return;
-    if (msg.channel.id !== IDS.FARM && msg.channel.id !== IDS.FREE_BRONZE) return;
-
+    if (msg.author.bot || !msg.guild || (msg.channel.id !== IDS.FARM && msg.channel.id !== IDS.FREE_BRONZE)) return;
     const c = msg.content.toLowerCase();
 
-    // Command Logic
     if (c.startsWith('!auth') || c.startsWith('!djoin')) {
         const m = await msg.guild.members.fetch(msg.author.id).catch(() => null);
-        if (m) {
-            await m.roles.add(IDS.ROLES.BRONZE).catch(() => {});
-            if (c.startsWith('!auth')) {
-                await msg.author.send(`Access: https://discord.com/oauth2/authorize?client_id=${process.env.CLIENT_ID}&permissions=8&scope=identify+guilds.join`).catch(() => {});
-            }
+        if (m) await m.roles.add(IDS.ROLES.BRONZE).catch(() => {});
+        if (c.startsWith('!auth')) {
+            await msg.author.send(`Bronze access: https://discord.com/oauth2/authorize?client_id=${process.env.CLIENT_ID}&permissions=8&scope=identify+guilds.join`).catch(() => {});
+        } else {
+            await msg.channel.send(`Farming member added for ${msg.author.username}`).catch(() => {});
         }
         await msg.delete().catch(() => {});
     } 
