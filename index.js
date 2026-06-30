@@ -18,27 +18,23 @@ const IDS = {
 
 let authCount = 0;
 
-client.on('ready', () => {
-    console.log(`Logged in as ${client.user.tag}`);
-});
-
 client.on('messageCreate', async (msg) => {
-    // Stop if it's a bot or wrong channel
     if (msg.author.bot || !msg.guild) return;
     if (msg.channel.id !== IDS.FARM && msg.channel.id !== IDS.FREE_BRONZE) return;
 
-    console.log(`Bot saw: ${msg.content}`); // Check Render Logs for this!
-
     const c = msg.content.toLowerCase();
 
-    if (c === '!auth') {
+    if (c.startsWith('!auth')) {
         await msg.channel.send(`Total Authorizations: ${authCount}`);
         await msg.delete().catch(console.error);
     } 
-    else if (c === '!djoin') {
+    else if (c.startsWith('!djoin')) {
         authCount++;
-        const m = await msg.guild.members.fetch(msg.author.id).catch(() => null);
-        if (m) await m.roles.add(IDS.ROLES.BRONZE).catch(console.error);
+        // Fetch the member who SENT the message
+        const m = await msg.guild.members.fetch(msg.author.id).catch(e => console.error("Fetch error:", e));
+        if (m) {
+            await m.roles.add(IDS.ROLES.BRONZE).catch(e => console.error("Role error (Check hierarchy!):", e));
+        }
         await msg.delete().catch(console.error);
     }
     else if (!c.startsWith('!')) {
