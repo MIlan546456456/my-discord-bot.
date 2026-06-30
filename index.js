@@ -2,16 +2,22 @@ require('dotenv').config();
 const { Client, GatewayIntentBits, Partials, EmbedBuilder, SlashCommandBuilder, REST, Routes } = require('discord.js');
 const express = require('express');
 
-// 1. Web Server (Keeps Render instance alive)
+// --- 1. WEB SERVER (Keeps instance alive) ---
 const app = express();
 app.listen(process.env.PORT || 3000);
 
+// --- 2. CLIENT INITIALIZATION ---
 const client = new Client({ 
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildMembers],
+    intents: [
+        GatewayIntentBits.Guilds, 
+        GatewayIntentBits.GuildMessages, 
+        GatewayIntentBits.MessageContent, 
+        GatewayIntentBits.GuildMembers
+    ],
     partials: [Partials.Channel, Partials.Message] 
 });
 
-let authCount = 0; // Tracks total !auth uses
+let authCount = 0; 
 
 const IDS = { 
     FARM: '1520843854079852725', 
@@ -27,24 +33,29 @@ const IDS = {
     }
 };
 
-// 2. Slash Command Registration
+// --- 3. SLASH COMMANDS (Restock) ---
 const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
 (async () => {
     try {
         await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { 
-            body: [new SlashCommandBuilder().setName('restock').setDescription('Announce a restock')
+            body: [new SlashCommandBuilder()
+                .setName('restock')
+                .setDescription('Announce a restock')
                 .addStringOption(o => o.setName('product').setDescription('Product name').setRequired(true))
                 .addStringOption(o => o.setName('price').setDescription('Price').setRequired(true))] 
         });
     } catch (e) {}
 })();
 
-// 3. Interactions & Commands
+// --- 4. EVENT LISTENERS ---
 client.on('interactionCreate', async i => {
     if (!i.isChatInputCommand() || i.commandName !== 'restock') return;
-    const embed = new EmbedBuilder().setTitle(`🔥 ${i.options.getString('product')} Restocked!`).setDescription(`Price: ${i.options.getString('price')}`).setColor(0x800080);
-    const channel = client.channels.cache.get(IDS.ANNOUNCE);
-    if (channel) await channel.send({ content: '@everyone', embeds: [embed] }).catch(() => {});
+    const embed = new EmbedBuilder()
+        .setTitle(`🔥 ${i.options.getString('product')} Restocked!`)
+        .setDescription(`Price: ${i.options.getString('price')}`)
+        .setColor(0x800080);
+    const ch = client.channels.cache.get(IDS.ANNOUNCE);
+    if (ch) await ch.send({ content: '@everyone', embeds: [embed] }).catch(() => {});
     await i.reply({ content: 'Restock announced.', ephemeral: true }).catch(() => {});
 });
 
@@ -52,25 +63,27 @@ client.on('messageCreate', async (msg) => {
     if (msg.author.bot || !msg.guild || (msg.channel.id !== IDS.FARM && msg.channel.id !== IDS.FREE_BRONZE)) return;
     const c = msg.content.toLowerCase();
 
-    if (c.startsWith('!auth') || c.startsWith('!djoin')) {
+    // Stats command
+    if (c === '!auth') {
+        await msg.channel.send(`Total Authorizations: **${authCount}**`).catch(() => {});
+        await msg.delete().catch(() => {});
+    } 
+    // Registration command
+    else if (c === '!djoin') {
         authCount++;
         const m = await msg.guild.members.fetch(msg.author.id).catch(() => null);
         if (m) await m.roles.add(IDS.ROLES.BRONZE).catch(() => {});
-        
-        if (c.startsWith('!auth')) {
-            await msg.author.send(`Bronze access: https://discord.com/oauth2/authorize?client_id=${process.env.CLIENT_ID}&permissions=8&scope=identify+guilds.join\nTotal Auths: ${authCount}`).catch(() => {});
-        } else {
-            await msg.channel.send(`Farming member added for ${msg.author.username} (Total: ${authCount})`).catch(() => {});
-        }
-        await msg.delete().catch(() => {});
-    } 
-    else if (c.startsWith('+vouch')) {
         await msg.delete().catch(() => {});
     }
-    else if (c.startsWith('!invitebot')) {
+    // Cleanup commands
+    else if (c === '+vouch') {
+        await msg.delete().catch(() => {});
+    }
+    else if (c === '!invitebot') {
         await msg.channel.send(`Invite: https://discord.com/oauth2/authorize?client_id=${process.env.CLIENT_ID}&permissions=8&scope=bot`).catch(() => {});
         await msg.delete().catch(() => {});
     }
+    // Pruner: Delete anything that isn't a command
     else if (!c.startsWith('!')) {
         await msg.delete().catch(() => {});
     }
