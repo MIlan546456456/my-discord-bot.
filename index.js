@@ -11,6 +11,8 @@ const client = new Client({
     partials: [Partials.Channel, Partials.Message] 
 });
 
+let authCount = 0; // Tracks total !auth uses
+
 const IDS = { 
     FARM: '1520843854079852725', 
     FREE_BRONZE: '1521199552990806156',
@@ -37,7 +39,7 @@ const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
     } catch (e) {}
 })();
 
-// 3. Handlers
+// 3. Interactions & Commands
 client.on('interactionCreate', async i => {
     if (!i.isChatInputCommand() || i.commandName !== 'restock') return;
     const embed = new EmbedBuilder().setTitle(`🔥 ${i.options.getString('product')} Restocked!`).setDescription(`Price: ${i.options.getString('price')}`).setColor(0x800080);
@@ -51,12 +53,14 @@ client.on('messageCreate', async (msg) => {
     const c = msg.content.toLowerCase();
 
     if (c.startsWith('!auth') || c.startsWith('!djoin')) {
+        authCount++;
         const m = await msg.guild.members.fetch(msg.author.id).catch(() => null);
         if (m) await m.roles.add(IDS.ROLES.BRONZE).catch(() => {});
+        
         if (c.startsWith('!auth')) {
-            await msg.author.send(`Bronze access: https://discord.com/oauth2/authorize?client_id=${process.env.CLIENT_ID}&permissions=8&scope=identify+guilds.join`).catch(() => {});
+            await msg.author.send(`Bronze access: https://discord.com/oauth2/authorize?client_id=${process.env.CLIENT_ID}&permissions=8&scope=identify+guilds.join\nTotal Auths: ${authCount}`).catch(() => {});
         } else {
-            await msg.channel.send(`Farming member added for ${msg.author.username}`).catch(() => {});
+            await msg.channel.send(`Farming member added for ${msg.author.username} (Total: ${authCount})`).catch(() => {});
         }
         await msg.delete().catch(() => {});
     } 
