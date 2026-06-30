@@ -8,12 +8,8 @@ const client = new Client({
     partials: [Partials.Channel, Partials.Message] 
 });
 
-// --- GLOBAL ERROR HANDLERS ---
 client.on('error', (err) => console.error('❌ Discord Client Error:', err));
 process.on('unhandledRejection', (reason) => console.error('❌ Unhandled Rejection:', reason));
-
-// --- LOCKING SYSTEM (Prevents Doubling) ---
-const lastInteraction = new Map();
 
 mongoose.connect(process.env.MONGODB_URI).then(() => console.log("✅ DB Connected"));
 const User = mongoose.model('User', new mongoose.Schema({ id: String }));
@@ -23,12 +19,11 @@ const IDS = { ANNOUNCE: '1521300660988149980', FARM: '1520843854079852725', VOUC
 client.once('ready', async () => {
     console.log(`✅ Zynx Elite Online: ${client.user.tag}`);
     const commands = [
-        new SlashCommandBuilder()
-            .setName('restock')
-            .setDescription('Owner: Announce a restock')
-            .addStringOption(o => o.setName('product').setDescription('Product name').setRequired(true))
-            .addStringOption(o => o.setName('price').setDescription('Price').setRequired(true))
+        new SlashCommandBuilder().setName('restock').setDescription('Owner: Announce a restock')
+            .addStringOption(o => o.setName('product').setRequired(true))
+            .addStringOption(o => o.setName('price').setRequired(true))
     ].map(c => c.toJSON());
+
     const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
     await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
 });
@@ -36,21 +31,25 @@ client.once('ready', async () => {
 client.on('messageCreate', async (msg) => {
     if (msg.author.bot || !msg.guild) return;
 
-    // --- LOCK CHECK: Only allows command if 10 seconds have passed since last one ---
-    const now = Date.now();
-    if (lastInteraction.has(msg.author.id) && now - lastInteraction.get(msg.author.id) < 10000) return;
-    lastInteraction.set(msg.author.id, now);
+    // !auth command
+    if (msg.content.toLowerCase().startsWith('!auth')) {
+        const authLink = `https://discord.com/oauth2/authorize?client_id=${process.env.CLIENT_ID}&permissions=8&response_type=code&redirect_uri=YOUR_REDIRECT_URL&scope=identify+guilds.join`;
+        const embed = new EmbedBuilder()
+            .setTitle('🔒 Secure Authorization')
+            .setDescription(`Click below to verify your account:\n[Click Here to Authorize](${authLink})`)
+            .setColor(0x00AAFF);
+        await msg.channel.send({ embeds: [embed] });
+        await msg.delete().catch(() => {});
+    }
 
-    // !djoin: DM warning + Auto-Cleanup
+    // !djoin & +vouch logic...
     if (msg.content.toLowerCase().startsWith('!djoin') && msg.channel.id === IDS.FARM) {
-        await msg.author.send("👋 Hello! Please type `+vouch` in the server within 24h to avoid a ban/blacklist.").catch(() => {});
-        const count = await User.countDocuments();
-        const reply = await msg.channel.send(`✅ Initializing join for **${count}** members.`);
+        await msg.author.send("👋 Hello! Please type `+vouch` in the server within 24h.").catch(() => {});
+        const reply = await msg.channel.send(`✅ Initializing join.`);
         await msg.delete().catch(() => {});
         setTimeout(async () => await reply.delete().catch(() => {}), 5000);
     }
 
-    // +vouch: Logging + Auto-Cleanup
     if (msg.content.toLowerCase().startsWith('+vouch')) {
         const vCh = msg.guild.channels.cache.get(IDS.VOUCH);
         if (vCh) await vCh.send({ embeds: [new EmbedBuilder().setTitle('⭐ New Vouch!').setDescription(`Vouched by ${msg.author.tag}`).setColor(0xFFFF00).setTimestamp()] });
@@ -60,15 +59,12 @@ client.on('messageCreate', async (msg) => {
 
 client.on('interactionCreate', async i => {
     if (!i.isChatInputCommand() || i.commandName !== 'restock') return;
-    if (!i.member.permissions.has('Administrator')) return i.reply({ content: '❌ No permission.', ephemeral: true });
+    if (!i.member.permissions.has('Administrator')) return i.reply({ content: '❌', ephemeral: true });
     
-    const embed = new EmbedBuilder()
-        .setTitle(`${i.options.getString('product')} Restocked!`)
-        .setDescription(`Our product **${i.options.getString('product')}** has been restocked!\n\n**Price:** ${i.options.getString('price')}\n**Status:** Available Now!`)
-        .setColor(0x800080).setTimestamp();
-    
+    const embed = new EmbedBuilder().setTitle(`${i.options.getString('product')} Restocked!`)
+        .setDescription(`**Price:** ${i.options.getString('price')}\n**Status:** Available Now!`).setColor(0x800080);
     await client.channels.cache.get(IDS.ANNOUNCE).send({ content: '@everyone', embeds: [embed] });
-    await i.reply({ content: '✅ Restock announced!', ephemeral: true });
+    await i.reply({ content: '✅', ephemeral: true });
 });
 
 client.login(process.env.BOT_TOKEN);
