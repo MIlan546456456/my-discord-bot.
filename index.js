@@ -1,15 +1,14 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, Partials, EmbedBuilder, SlashCommandBuilder, REST, Routes } = require('discord.js');
-
-// --- WEB SERVER (REQUIRED FOR RENDER WEB SERVICE) ---
 const express = require('express');
+
+// 1. DUMMY WEB SERVER (Stops Render "No Open Ports" loop)
 const app = express();
 const port = process.env.PORT || 3000;
-
 app.get('/', (req, res) => res.send('Bot is online.'));
 app.listen(port, () => console.log(`Web server listening on port ${port}`));
 
-// --- BOT LOGIC ---
+// 2. BOT INITIALIZATION
 const client = new Client({ 
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildMembers],
     partials: [Partials.Channel, Partials.Message] 
@@ -21,7 +20,7 @@ const IDS = {
     BRONZE: '1520843854079852725' 
 };
 
-// Slash Command Registration
+// 3. ISOLATED SLASH COMMAND REGISTRATION
 const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
 (async () => {
     try {
@@ -37,6 +36,9 @@ const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
     } catch (e) {}
 })();
 
+client.once('ready', () => console.log('Bot is ready.'));
+
+// 4. INTERACTION HANDLER
 client.on('interactionCreate', async i => {
     if (!i.isChatInputCommand() || i.commandName !== 'restock') return;
     const embed = new EmbedBuilder()
@@ -48,6 +50,7 @@ client.on('interactionCreate', async i => {
     await i.reply({ content: 'Done.', ephemeral: true }).catch(() => {});
 });
 
+// 5. MESSAGE COMMAND HANDLER
 client.on('messageCreate', async (msg) => {
     if (msg.author.bot || !msg.guild || msg.channel.id !== IDS.FARM) return;
     const content = msg.content.toLowerCase();
