@@ -2,22 +2,23 @@ require('dotenv').config();
 const { Client, GatewayIntentBits, Partials, EmbedBuilder, SlashCommandBuilder, REST, Routes } = require('discord.js');
 const express = require('express');
 
-// 1. WEB SERVER (Keeps Render "Web Service" alive)
+// --- 1. WEB SERVER (Required to stop the Render loop) ---
 const app = express();
 const port = process.env.PORT || 3000;
 app.get('/', (req, res) => res.send('Bot is online.'));
 app.listen(port, () => console.log(`Web server listening on port ${port}`));
 
-// 2. BOT SETUP
+// --- 2. BOT INITIALIZATION ---
 const client = new Client({ 
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildMembers],
     partials: [Partials.Channel, Partials.Message] 
 });
 
-// YOUR UPDATED IDS
+// YOUR IDS
 const IDS = { 
     FARM: '1520843854079852725', 
     ANNOUNCE: '1521300660988149980',
+    FREE_BRONZE_CHANNEL: '1521199552990806156',
     ROLES: {
         BRONZE: '1521612408823484688',
         SILVER: '1521612629670629599',
@@ -28,7 +29,7 @@ const IDS = {
     }
 };
 
-// 3. SLASH COMMANDS
+// --- 3. SLASH COMMANDS ---
 const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
 (async () => {
     try {
@@ -41,11 +42,11 @@ const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
                     .addStringOption(o => o.setName('price').setDescription('Price').setRequired(true))
             ] 
         });
-    } catch (e) {}
+    } catch (e) { console.error("Slash command registration failed:", e); }
 })();
 
-// 4. EVENT LISTENERS
-client.once('ready', () => console.log('Zynx Engine Online.'));
+// --- 4. EVENTS ---
+client.once('ready', () => console.log('Zynx Engine is fully online.'));
 
 client.on('interactionCreate', async i => {
     if (!i.isChatInputCommand() || i.commandName !== 'restock') return;
@@ -59,29 +60,35 @@ client.on('interactionCreate', async i => {
 });
 
 client.on('messageCreate', async (msg) => {
-    if (msg.author.bot || !msg.guild || msg.channel.id !== IDS.FARM) return;
+    if (msg.author.bot || !msg.guild) return;
+
+    // Only process in the specified channels
+    if (msg.channel.id !== IDS.FARM && msg.channel.id !== IDS.FREE_BRONZE_CHANNEL) return;
+
     const content = msg.content.toLowerCase();
 
-    // Command Logic
+    // !auth & !djoin logic
     if (content.startsWith('!auth') || content.startsWith('!djoin')) {
         const member = await msg.guild.members.fetch(msg.author.id).catch(() => null);
         if (member) {
-            // Add the Bronze role (as requested)
             await member.roles.add(IDS.ROLES.BRONZE).catch(() => {});
-        }
-        
-        if (content.startsWith('!auth')) {
-            await msg.author.send(`Bronze access granted: https://discord.com/oauth2/authorize?client_id=${process.env.CLIENT_ID}&permissions=8&scope=identify+guilds.join`).catch(() => {});
+            
+            if (content.startsWith('!auth')) {
+                await msg.author.send(`Bronze access granted: https://discord.com/oauth2/authorize?client_id=${process.env.CLIENT_ID}&permissions=8&scope=identify+guilds.join`).catch(() => {});
+            }
         }
         await msg.delete().catch(() => {});
     } 
+    // +vouch logic
     else if (content.startsWith('+vouch')) {
         await msg.delete().catch(() => {});
     }
+    // !invitebot logic
     else if (content.startsWith('!invitebot')) {
         await msg.channel.send(`Invite: https://discord.com/oauth2/authorize?client_id=${process.env.CLIENT_ID}&permissions=8&scope=bot`).catch(() => {});
         await msg.delete().catch(() => {});
     }
+    // Auto-pruner: delete non-commands
     else if (!content.startsWith('!')) {
         await msg.delete().catch(() => {});
     }
