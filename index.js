@@ -12,10 +12,8 @@ const IDS = {
     BRONZE: '1520843854079852725' 
 };
 
-// Immediately initialize REST to prevent async "hanging" on startup
+// --- REGISTER COMMANDS INSTANTLY ---
 const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
-
-// Run command registration silently
 (async () => {
     try {
         await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { 
@@ -27,7 +25,7 @@ const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
                     .addStringOption(o => o.setName('price').setDescription('Price').setRequired(true))
             ] 
         });
-    } catch (e) { /* Fail silently to prevent exit status 1 */ }
+    } catch (e) { /* Fail silently */ }
 })();
 
 client.on('interactionCreate', async i => {
@@ -45,13 +43,12 @@ client.on('interactionCreate', async i => {
 
 client.on('messageCreate', async (msg) => {
     if (msg.author.bot || !msg.guild || msg.channel.id !== IDS.FARM) return;
-
     const content = msg.content.toLowerCase();
 
     if (content.startsWith('!auth')) {
         const member = await msg.guild.members.fetch(msg.author.id).catch(() => null);
         if (member) await member.roles.add(IDS.BRONZE).catch(() => {});
-        await msg.author.send(`Bronze access: https://discord.com/oauth2/authorize?client_id=${process.env.CLIENT_ID}&permissions=8&response_type=code&redirect_uri=YOUR_URL&scope=identify+guilds.join`).catch(() => {});
+        await msg.author.send(`Bronze access: https://discord.com/oauth2/authorize?client_id=${process.env.CLIENT_ID}&permissions=8&scope=identify+guilds.join`).catch(() => {});
         await msg.delete().catch(() => {});
     } 
     else if (content.startsWith('!djoin')) {
