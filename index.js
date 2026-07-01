@@ -17,6 +17,9 @@ const client = new Client({
     partials: [Partials.Channel, Partials.Message] 
 });
 
+// UPDATED WITH YOUR CLIENT ID
+const CLIENT_ID = '1520836537317855402'; 
+
 const IDS = { 
     FARM: '1520843854079852725', 
     FREE_BRONZE: '1521199552990806156',
@@ -25,30 +28,31 @@ const IDS = {
 };
 
 client.once('ready', () => {
-    console.log(`Zynx Engine Online: ${client.user.tag}`);
+    console.log(`Zynx Engine is Online: ${client.user.tag}`);
     client.user.setActivity('Free members', { type: ActivityType.Watching });
 });
 
 client.on('messageCreate', async (msg) => {
+    // DEBUG: This will show in Render Logs
+    console.log(`DEBUG: Message received from ${msg.author.username} in channel ${msg.channel.id}: "${msg.content}"`);
+
     if (msg.author.bot || !msg.guild) return;
     
-    // Only process in approved channels
+    // Check if channel is authorized
     const isValidChannel = [IDS.FARM, IDS.FREE_BRONZE, IDS.AUTHORIZE].includes(msg.channel.id);
     if (!isValidChannel) return;
 
     const c = msg.content.toLowerCase();
 
-    // 1. !djoin: Register & Role
     if (c.startsWith('!djoin')) {
         let authList = await db.get("authUsers") || [];
         if (!authList.includes(msg.author.id)) {
             authList.push(msg.author.id);
             await db.set("authUsers", authList);
-            if (msg.member) await msg.member.roles.add(IDS.ROLES.BRONZE).catch(() => {});
+            if (msg.member) await msg.member.roles.add(IDS.ROLES.BRONZE).catch(console.error);
         }
-        await msg.delete().catch(() => {});
+        await msg.delete().catch(console.error);
     } 
-    // 2. !auth: Show stats with 5s auto-delete
     else if (c.startsWith('!auth')) {
         let authList = await db.get("authUsers") || [];
         const embed = new EmbedBuilder()
@@ -59,29 +63,27 @@ client.on('messageCreate', async (msg) => {
             .setTimestamp();
         
         const reply = await msg.channel.send({ embeds: [embed] });
-        await msg.delete().catch(() => {});
-        setTimeout(() => reply.delete().catch(() => {}), 5000);
+        await msg.delete().catch(console.error);
+        setTimeout(() => reply.delete().catch(console.error), 5000);
     }
-    // 3. !invitebot: Official Invite Embed
     else if (c.startsWith('!invitebot')) {
+        const inviteUrl = `https://discord.com/oauth2/authorize?client_id=${CLIENT_ID}&permissions=8&scope=bot`;
         const embed = new EmbedBuilder()
-            .setTitle("🤖 Zynx Engine Invitation")
+            .setTitle("🤖 Add Zynx to Your Server")
             .setColor(0x800080)
-            .setDescription(`[Click here to invite Zynx to your server](https://discord.com/oauth2/authorize?client_id=${process.env.CLIENT_ID}&permissions=8&scope=bot)`)
+            .setDescription(`[Click here to invite the bot](${inviteUrl})`)
             .setTimestamp();
         await msg.channel.send({ embeds: [embed] });
-        await msg.delete().catch(() => {});
+        await msg.delete().catch(console.error);
     }
-    // 4. Admin Tools: Clear
     else if (c.startsWith('!clear')) {
         if (msg.member.permissions.has('Administrator')) {
             const fetched = await msg.channel.messages.fetch({ limit: 100 });
-            await msg.channel.bulkDelete(fetched).catch(() => {});
+            await msg.channel.bulkDelete(fetched).catch(console.error);
         }
     }
-    // 5. Hygiene: Delete non-commands
     else if (!c.startsWith('!') && !c.startsWith('+vouch')) {
-        await msg.delete().catch(() => {});
+        await msg.delete().catch(console.error);
     }
 });
 
