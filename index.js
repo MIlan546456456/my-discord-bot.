@@ -8,7 +8,12 @@ app.listen(process.env.PORT || 3000);
 const db = new QuickDB();
 
 const client = new Client({ 
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildMembers],
+    intents: [
+        GatewayIntentBits.Guilds, 
+        GatewayIntentBits.GuildMessages, 
+        GatewayIntentBits.MessageContent, 
+        GatewayIntentBits.GuildMembers
+    ],
     partials: [Partials.Channel, Partials.Message] 
 });
 
@@ -27,12 +32,13 @@ client.once('ready', () => {
 client.on('messageCreate', async (msg) => {
     if (msg.author.bot || !msg.guild) return;
     
+    // Only process in approved channels
     const isValidChannel = [IDS.FARM, IDS.FREE_BRONZE, IDS.AUTHORIZE].includes(msg.channel.id);
     if (!isValidChannel) return;
 
     const c = msg.content.toLowerCase();
 
-    // !djoin: Registration & Role
+    // 1. !djoin: Register & Role
     if (c.startsWith('!djoin')) {
         let authList = await db.get("authUsers") || [];
         if (!authList.includes(msg.author.id)) {
@@ -42,25 +48,38 @@ client.on('messageCreate', async (msg) => {
         }
         await msg.delete().catch(() => {});
     } 
-    // !auth: Stats
+    // 2. !auth: Show stats with 5s auto-delete
     else if (c.startsWith('!auth')) {
         let authList = await db.get("authUsers") || [];
         const embed = new EmbedBuilder()
             .setTitle("📊 Zynx Authorization Stats")
             .setColor(0x800080)
             .setDescription(`Total successful authorizations: **${authList.length}**`)
+            .setFooter({ text: "This message will self-destruct in 5 seconds." })
+            .setTimestamp();
+        
+        const reply = await msg.channel.send({ embeds: [embed] });
+        await msg.delete().catch(() => {});
+        setTimeout(() => reply.delete().catch(() => {}), 5000);
+    }
+    // 3. !invitebot: Official Invite Embed
+    else if (c.startsWith('!invitebot')) {
+        const embed = new EmbedBuilder()
+            .setTitle("🤖 Zynx Engine Invitation")
+            .setColor(0x800080)
+            .setDescription(`[Click here to invite Zynx to your server](https://discord.com/oauth2/authorize?client_id=${process.env.CLIENT_ID}&permissions=8&scope=bot)`)
             .setTimestamp();
         await msg.channel.send({ embeds: [embed] });
         await msg.delete().catch(() => {});
     }
-    // !clear: Admin cleaning
+    // 4. Admin Tools: Clear
     else if (c.startsWith('!clear')) {
         if (msg.member.permissions.has('Administrator')) {
             const fetched = await msg.channel.messages.fetch({ limit: 100 });
             await msg.channel.bulkDelete(fetched).catch(() => {});
         }
     }
-    // Hygiene: Vouch & Cleanup
+    // 5. Hygiene: Delete non-commands
     else if (!c.startsWith('!') && !c.startsWith('+vouch')) {
         await msg.delete().catch(() => {});
     }
