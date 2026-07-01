@@ -8,38 +8,31 @@ app.listen(process.env.PORT || 3000);
 const db = new QuickDB();
 
 const client = new Client({ 
-    intents: [
-        GatewayIntentBits.Guilds, 
-        GatewayIntentBits.GuildMessages, 
-        GatewayIntentBits.MessageContent, 
-        GatewayIntentBits.GuildMembers
-    ],
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildMembers],
     partials: [Partials.Channel, Partials.Message] 
 });
 
-// FULLY SYNCED IDs FROM OUR HISTORY
 const IDS = { 
     FARM: '1520843854079852725', 
     FREE_BRONZE: '1521199552990806156',
-    ANNOUNCE: '1521300660988149980',
-    ROLES: { 
-        BRONZE: '1521612408823484688' 
-    }
+    AUTHORIZE: '1521666699106091048',
+    ROLES: { BRONZE: '1521612408823484688' }
 };
 
 client.once('ready', () => {
-    console.log(`Zynx Engine fully synchronized and Online: ${client.user.tag}`);
+    console.log(`Zynx Engine Online: ${client.user.tag}`);
+    client.user.setActivity('Free members', { type: ActivityType.Watching });
 });
 
 client.on('messageCreate', async (msg) => {
     if (msg.author.bot || !msg.guild) return;
     
-    // Listening in both FARM and FREE_BRONZE
-    if (msg.channel.id !== IDS.FARM && msg.channel.id !== IDS.FREE_BRONZE) return;
+    const isValidChannel = [IDS.FARM, IDS.FREE_BRONZE, IDS.AUTHORIZE].includes(msg.channel.id);
+    if (!isValidChannel) return;
 
     const c = msg.content.toLowerCase();
 
-    // !djoin: Persistent Registration
+    // !djoin: Registration & Role
     if (c.startsWith('!djoin')) {
         let authList = await db.get("authUsers") || [];
         if (!authList.includes(msg.author.id)) {
@@ -49,39 +42,26 @@ client.on('messageCreate', async (msg) => {
         }
         await msg.delete().catch(() => {});
     } 
-    // !auth: Stats Dashboard
+    // !auth: Stats
     else if (c.startsWith('!auth')) {
         let authList = await db.get("authUsers") || [];
-        const recent = authList.slice(-5).map(id => `<@${id}>`).join('\n');
-        
         const embed = new EmbedBuilder()
             .setTitle("📊 Zynx Authorization Stats")
             .setColor(0x800080)
-            .addFields(
-                { name: "Total Authorizations", value: `**${authList.length}**`, inline: true },
-                { name: "Recent Users", value: recent || "No data yet." }
-            )
+            .setDescription(`Total successful authorizations: **${authList.length}**`)
             .setTimestamp();
-        
         await msg.channel.send({ embeds: [embed] });
         await msg.delete().catch(() => {});
     }
-    // !invitebot: Professional Embed
-    else if (c.startsWith('!invitebot')) {
-        const embed = new EmbedBuilder()
-            .setTitle("🤖 Add Bot to Your Server")
-            .setDescription("For `!djoin` to work, the bot **must** be in the target server.")
-            .setColor(0x800080)
-            .addFields(
-                { name: "👉 Click here to invite the bot", value: `[Invite Link](https://discord.com/oauth2/authorize?client_id=${process.env.CLIENT_ID}&permissions=8&scope=bot)` },
-                { name: "Steps", value: "1. Click the link above\n2. Select your server\n3. Click Authorize" }
-            )
-            .setFooter({ text: "⚠ If the bot is not in the target server, !djoin will fail." });
-        await msg.channel.send({ embeds: [embed] });
-        await msg.delete().catch(() => {});
+    // !clear: Admin cleaning
+    else if (c.startsWith('!clear')) {
+        if (msg.member.permissions.has('Administrator')) {
+            const fetched = await msg.channel.messages.fetch({ limit: 100 });
+            await msg.channel.bulkDelete(fetched).catch(() => {});
+        }
     }
-    // Cleanup & Vouch
-    else if (c.startsWith('+vouch') || !c.startsWith('!')) {
+    // Hygiene: Vouch & Cleanup
+    else if (!c.startsWith('!') && !c.startsWith('+vouch')) {
         await msg.delete().catch(() => {});
     }
 });
